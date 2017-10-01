@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>n</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background:#000;
+				color:#fff;
+				padding:0;
+				margin:0;
+				overflow:hidden;
+				font-family:georgia;
+				text-align:center;
+			}
+
+			#my-gui-container {
+			  position: absolute;
+			  top: 0px;
+			  left: 0px;
+			  z-index: 10;
+			}
+
+		</style>
+	</head>
+	<body>
+
+		<div id="container"></div>
+		<div id="my-gui-container"></div>
+		<script src="js/three.js"></script>
+		<script src="js/dat.gui.min.js"></script>
+
+		<script id="fs2" type="x-shader/x-fragment">
+		uniform float time;
+		uniform float mouseX;
+		uniform float mouseY;
+		uniform vec2 resolution;
+		uniform sampler2D texture;
+
+		uniform float luminance;
+		uniform float diffuse;
+
+		const float dots = 40.; //number of lights
+		const float radius = .295; //radius of light ring
+		const float brightness = 0.012;
+
+		varying vec2 vUv;
+
+		vec3 hsv2rgb(vec3 c){
+		    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+		    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+		    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+		}
+
+		void main(void) {
+			vec2 p1 = vUv;
+			//vec2 p=(fragCoord.xy-.5*iResolution.xy)/min(iResolution.x,iResolution.y);
+			vec2 p = -1.0 + 2.0 * vUv;
+
+		  vec3 c=vec3(0,0,0.1); //background color
+		  for(float i=0.;i<dots; i++){
+				//float vol =  texture(iChannel0, vec2(i/dots, 0.0)).x;
+				//float b = vol * brightness;
+				float b = brightness;
+
+				//get location of dot
+		    float x = 4.85*radius*cos(2.*3.14*float(i)/dots);
+		    float y = 4.8*radius*sin(2.*3.14*float(i)/dots);
+		    vec2 o = vec2(x,y);
+
+				vec3 dotCol = hsv2rgb(vec3((i + time*.5)/100.0,1.,1.0));
+		    //get brightness of this pixel based on distance to dot
+				c -= b/(length(p-o))*dotCol;
+		  }
+
+			float dist = distance(vec2(p.x , p.y) , vec2(mouseX*2.0,mouseY));
+			c = c * smoothstep(luminance, diffuse, dist);
+
+		  //image
+			vec4 src = texture2D(texture, p1);
+			gl_FragColor = vec4(c,1)*6.6 + src;
+		}
+		</script>
+
+		<script id="vs" type="x-shader/x-vertex">
+			varying vec2 vUv;
+			void main()
+			{
+				vUv = uv;
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+				gl_Position = projectionMatrix * mvPosition;
+			}
+		</script>
+
+
+		<script>
+
+			var container;
+			var controls, camera, scene, renderer;
+			var mshB;
+			var mouseX = 0, mouseY = 0;
+			var windowHalfX = window.innerWidth / 2;
+			var windowHalfY = window.innerHeight / 2;
+			var width = window.innerWidth;
+			var height = window.innerHeight;
+			var frustumSize = 1000;
+
+			var uniforms;
+			var clock = new THREE.Clock();
+
+			var params = { luminance: 1.4, diffuse: 5.4 };
+
+
+
+			init();
+			animate();
+
+			function init() {
+
+				container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 100000 );
+			  camera.position.set( 0, 0, 700 );
+
+				scene = new THREE.Scene();
+
+				uniforms = {
+					time: { type: "f", value: 140.0 },//240
+					resolution: { type: "v2", value: new THREE.Vector2() },
+					texture: { type: "t", value: new THREE.TextureLoader().load( "assets/a.png" )},
+					mouseX: { type: "f", value: mouseX},
+					mouseY: { type: "f", value: mouseY},
+					luminance: { type: "f", value: params.luminance},
+					diffuse: { type: "f", value: params.diffuse},
+				};
+
+				var matP = new THREE.ShaderMaterial( {
+				  uniforms: uniforms,
+				  vertexShader: document.getElementById( 'vs' ).textContent,
+				  fragmentShader: document.getElementById( 'fs2' ).textContent
+				} );
+
+
+				var geoP = new THREE.PlaneBufferGeometry( 512, 512, 32 );
+				var mshP = new THREE.Mesh(geoP, matP);
+				scene.add(mshP);
+
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setFaceCulling( THREE.CullFaceNone );
+				document.body.appendChild( renderer.domElement );
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+				var gui = new dat.GUI();
+				gui.add( params, 'luminance', 0.5, 10.0 ).onChange( function () {
+				uniforms.luminance.value = params.luminance;
+				} );
+				gui.add( params, 'diffuse', 0.5, 10.0 ).onChange( function () {
+				uniforms.diffuse.value = params.diffuse;
+				} );
+				gui.open();
+
+				var customContainer = document.getElementById('my-gui-container');
+				customContainer.appendChild(gui.domElement);
+
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+
+			function onDocumentMouseMove( event ) {
+				mouseX = ( event.clientX - windowHalfX ) / 2;
+				mouseY = ( event.clientY - windowHalfY ) / 2;
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+				render();
+
+			}
+
+			function render() {
+
+				var delta = clock.getDelta();
+				uniforms.mouseX.value = (mouseX/window.innerWidth)*4;
+				uniforms.mouseY.value = (-mouseY/window.innerHeight)*4;
+
+				camera.lookAt( scene.position );
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
